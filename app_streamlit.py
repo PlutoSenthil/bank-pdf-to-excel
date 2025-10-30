@@ -246,9 +246,23 @@ def df_to_excel_bytes(
             worksheet.autofilter(0, 0, last_row, last_col)
 
         # Auto-fit widths (approximate, based on string length)
-        for idx, col in enumerate(df.columns):
-            series_as_str = df[col].astype(str).replace("nan", "")
-            max_len = max([len(str(col))] + [len(x) for x in series_as_str.tolist()]) + padding
+        # NOTE: Use positional indexing to ALWAYS get a Series (handles duplicate column names)
+        for idx in range(len(df.columns)):
+            col_name = df.columns[idx]
+            col_series = df.iloc[:, idx]  # guaranteed Series
+            series_as_str = col_series.astype(str)
+
+            # Treat "nan" and "None" as empty for width purposes
+            series_as_str = series_as_str.replace({"nan": "", "None": ""})
+
+            # Compute width: max(len(header), max(len(value))) + padding
+            try:
+                values_len = [len(s) for s in series_as_str.tolist()]
+            except Exception:
+                # Fallback just in case some exotic dtype sneaks in
+                values_len = [len(str(s)) for s in series_as_str]
+
+            max_len = max([len(str(col_name))] + values_len) + padding
             width = max(min_width, min(max_len, max_width))
             worksheet.set_column(idx, idx, width)
 
@@ -273,15 +287,38 @@ def render_page_image(pdf_path: str, page_number: int, dpi: int = 150) -> Image.
 
 def make_display_safe(df: pd.DataFrame, preview_rows: int = 50) -> pd.DataFrame:
     """
-    Return a preview DataFrame that is safe for Streamlit/PyArrow JSON metadata:
+    Return a preview DataFrame that is safe for Streamlit/PyArrow:
     - Ensure column names are strings
-    - Convert preview rows to strings (display only)
+    - De-duplicate column names (Arrow requires unique field names)
+    - Reset index to a simple RangeIndex
+    - Convert preview rows to strings (display-only)
     """
     if df is None or df.empty:
         return df
+
     preview = df.head(preview_rows).copy()
-    preview.columns = [str(c) for c in preview.columns]
+
+    # 1) Ensure string column names
+    cols = ["" if c is None else str(c) for c in preview.columns]
+
+    # 2) De-duplicate column names (A, A -> A, A__2, A__3, ...)
+    seen = {}
+    unique_cols = []
+    for c in cols:
+        if c in seen:
+            seen[c] += 1
+            unique_cols.append(f"{c}__{seen[c]}")
+        else:
+            seen[c] = 1
+            unique_cols.append(c)
+    preview.columns = unique_cols
+
+    # 3) Simple RangeIndex to avoid multiindex/odd types in index
+    preview.index = range(len(preview))
+
+    # 4) Stringify values for safe JSON/Arrow metadata
     preview = preview.astype(str)
+
     return preview
 def get_log_text() -> str:
     """Return current logs text (if any)."""
@@ -483,9 +520,17 @@ if uploaded:
                 if meta.get("info"):
                     st.info("Info:\n\n- " + "\n- ".join(meta["info"]))
 
-            # ---- SAFE PREVIEW (stringified only for display) ----
-            display_df = make_display_safe(final_df, preview_rows=50)
-            st.dataframe(display_df, width='stretch')
+            # ---- SAFE PREVIEW (stringified & deduped only for display) ----
+            display_df = make_display_safe(final_df, preview_rows=5)
+            try:
+                st.dataframe(display_df, width='stretch')
+            except Exception as e:
+                st.warning("Couldn’t render the interactive grid; falling back to a static table.")
+                st.table(display_df)  # simple static fallback
+                # Optional: let you reveal the rendering error if you want to debug UI issues
+                show_render_err = st.checkbox("Show preview render error (debug)", value=False)
+                if show_render_err:
+                    st.exception(e)
 
             # Build Excel bytes with formatting (use original df)
             try:
