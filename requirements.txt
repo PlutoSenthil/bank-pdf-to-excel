@@ -1,0 +1,8 @@
+camelot-py[cv]
+tabula-py
+pymupdf
+pandas
+numpy
+xlsxwriter
+streamlit
+Pillow
