@@ -291,10 +291,10 @@ def get_log_text() -> str:
 # ----------------------------
 # Streamlit UI
 # ----------------------------
-st.set_page_config(page_title="Bank PDF → Excel (Camelot)", layout="centered")
+st.set_page_config(page_title="PDF → Excel (Camelot)", layout="centered")
 
-st.title("🏦 Bank PDF → Excel")
-st.caption("Camelot (lattice) + PyMuPDF • Your exact conversion logic • Streamlit UI")
+st.title("PDF → Excel")
+st.caption("Camelot (lattice) + PyMuPDF • Streamlit UI")
 
 with st.expander("How it works", expanded=False):
     st.markdown(
